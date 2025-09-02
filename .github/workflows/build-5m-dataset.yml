@@ -6,6 +6,10 @@ Build a 5-minute dataset from Polygon:
 - Optional RTH filter (09:30–16:00 New York)
 - Output: data_5m/*.parquet + data_5m/manifest_5m.json + universe_topN.csv
 """
+
+on:
+  workflow_dispatch:
+
 import os, sys, time, json, argparse, requests, pandas as pd
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
