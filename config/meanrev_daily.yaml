@@ -1,0 +1,14 @@
+topk: 10
+entry:
+  rsi2_max: 5
+  zscore_lookback: 5
+  zscore_min: -1.75
+  bb_win: 20
+  bb_k: 2
+exits:
+  rsi2_takeprofit: 70
+  ema5_revert: true
+  time_stop_days: 3
+  close_stop_atr_win: 14
+  close_stop_atr_mult: 1.5
+entry_day_stop_atr_mult: 1.0
