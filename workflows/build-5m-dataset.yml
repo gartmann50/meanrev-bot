@@ -22,7 +22,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      POLYGON_KEY: ${{ secrets.POLYGON_KEY }}
+      POLYGON_KEY: ${{ secrets.POLYGON_KEY }}   # <-- make sure your secret is named exactly this
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,20 +32,37 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests pyarrow
 
+      # NEW: sanity check the secret is actually available to the job
+      - name: Check POLYGON_KEY wiring
+        run: |
+          if [ -z "${POLYGON_KEY:-}" ]; then
+            echo "ERROR: POLYGON_KEY is empty. Add it in Settings → Secrets and variables → Actions." >&2
+            exit 1
+          fi
+          python - <<'PY'
+import os
+k = os.getenv("POLYGON_KEY","")
+print("POLYGON_KEY length:", len(k))   # value stays masked in logs
+PY
+
       - name: Build universe (top by median $ volume)
         run: |
+          [ -n "${POLYGON_KEY:-}" ] || { echo "POLYGON_KEY missing"; exit 1; }
           python universe_top_adv_polygon.py \
             --top "${{ inputs.top }}" \
-            --out universe_top${{ inputs.top }}.csv
+            --out universe_top${{ inputs.top }}.csv \
+            --api-key "${POLYGON_KEY}"
 
       - name: Download 5m dataset (RTH)
         run: |
+          [ -n "${POLYGON_KEY:-}" ] || { echo "POLYGON_KEY missing"; exit 1; }
           python etl_polygon_5m_ci.py \
             --symbols-file universe_top${{ inputs.top }}.csv \
             --start "${{ inputs.start }}" \
             --end   "${{ inputs.end }}" \
             --out-dir data_5m \
-            --rth-only
+            --rth-only \
+            --api-key "${POLYGON_KEY}"
 
       - name: Upload dataset artifact
         uses: actions/upload-artifact@v4
@@ -55,3 +72,4 @@ jobs:
             universe_top${{ inputs.top }}.csv
             data_5m/
           retention-days: 14
+
