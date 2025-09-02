@@ -23,7 +23,7 @@ jobs:
           workflow: build-5m-dataset.yml   # the workflow file that produced the artifact
           workflow_conclusion: success
           branch: main                     # change if your default branch isn't main
-          name: ${{ inputs.artifact_name }}# <-- paste exact name here when you run
+          name: ${{ inputs.artifact_name }}
           path: dataset
 
       - name: Install deps
