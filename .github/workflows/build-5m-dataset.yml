@@ -1,0 +1,57 @@
+name: build-5m-dataset
+
+on:
+  workflow_dispatch:
+    inputs:
+      top:
+        description: Top N symbols
+        required: true
+        default: "400"
+      start:
+        description: Start date (YYYY-MM-DD)
+        required: true
+        default: "2024-01-01"
+      end:
+        description: End date (YYYY-MM-DD)
+        required: true
+        default: "2024-12-31"
+
+concurrency: { group: build-5m-dataset, cancel-in-progress: true }
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      POLYGON_KEY: ${{ secrets.POLYGON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas requests pyarrow
+
+      - name: Build universe (top by median $ volume)
+        run: |
+          python universe_top_adv_polygon.py \
+            --top "${{ inputs.top }}" \
+            --out universe_top${{ inputs.top }}.csv
+
+      - name: Download 5m dataset (RTH)
+        run: |
+          python etl_polygon_5m_ci.py \
+            --symbols-file universe_top${{ inputs.top }}.csv \
+            --start "${{ inputs.start }}" \
+            --end   "${{ inputs.end }}" \
+            --out-dir data_5m \
+            --rth-only
+
+      - name: Upload dataset artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-5m-${{ inputs.start }}-${{ inputs.end }}
+          path: |
+            universe_top${{ inputs.top }}.csv
+            data_5m/
+          retention-days: 14
