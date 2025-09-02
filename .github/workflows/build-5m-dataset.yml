@@ -1,28 +1,17 @@
 name: build-5m-dataset
-
 on:
   workflow_dispatch:
     inputs:
-      top:
-        description: Top N symbols
-        required: true
-        default: "400"
-      start:
-        description: Start date (YYYY-MM-DD)
-        required: true
-        default: "2024-01-01"
-      end:
-        description: End date (YYYY-MM-DD)
-        required: true
-        default: "2024-12-31"
+      top:   { description: "Top N symbols", default: "400", required: true }
+      start: { description: "Start date (YYYY-MM-DD)", default: "2024-01-01", required: true }
+      end:   { description: "End date (YYYY-MM-DD)",   default: "2024-12-31", required: true }
+      rth:   { description: "RTH only (true/false)",    default: "true",        required: true }
 
 concurrency: { group: build-5m-dataset, cancel-in-progress: true }
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      POLYGON_KEY: ${{ secrets.POLYGON_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,20 +21,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas requests pyarrow
 
-      - name: Build universe (top by median $ volume)
+      - name: Verify POLYGON_KEY secret
+        env: { POLYGON_KEY: ${{ secrets.POLYGON_KEY }} }
         run: |
-          python universe_top_adv_polygon.py \
-            --top "${{ inputs.top }}" \
-            --out universe_top${{ inputs.top }}.csv
+          python - <<'PY'
+import os
+k=os.getenv("POLYGON_KEY","")
+print("POLYGON_KEY length:", len(k))
+assert k, "POLYGON_KEY is empty"
+PY
 
-      - name: Download 5m dataset (RTH)
+      - name: Build 5m dataset
         run: |
-          python etl_polygon_5m_ci.py \
-            --symbols-file universe_top${{ inputs.top }}.csv \
+          python build_5m_dataset.py \
+            --top "${{ inputs.top }}" \
             --start "${{ inputs.start }}" \
             --end   "${{ inputs.end }}" \
             --out-dir data_5m \
-            --rth-only
+            --universe-out universe_top${{ inputs.top }}.csv \
+            $([ "${{ inputs.rth }}" = "true" ] && echo --rth-only) \
+            --api-key "${{ secrets.POLYGON_KEY }}"
 
       - name: Upload dataset artifact
         uses: actions/upload-artifact@v4
