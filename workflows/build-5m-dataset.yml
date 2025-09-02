@@ -45,24 +45,24 @@ k = os.getenv("POLYGON_KEY","")
 print("POLYGON_KEY length:", len(k))   # value stays masked in logs
 PY
 
-      - name: Build universe (top by median $ volume)
+            - name: Build universe (top by median $ volume)
         run: |
-          [ -n "${POLYGON_KEY:-}" ] || { echo "POLYGON_KEY missing"; exit 1; }
+          test -n "${{ secrets.POLYGON_KEY }}" || { echo "ERROR: POLYGON_KEY secret is missing"; exit 1; }
           python universe_top_adv_polygon.py \
             --top "${{ inputs.top }}" \
-            --out universe_top${{ inputs.top }}.csv \
-            --api-key "${POLYGON_KEY}"
+            --out "universe_top${{ inputs.top }}.csv" \
+            --api-key "${{ secrets.POLYGON_KEY }}"
 
       - name: Download 5m dataset (RTH)
         run: |
-          [ -n "${POLYGON_KEY:-}" ] || { echo "POLYGON_KEY missing"; exit 1; }
+          test -n "${{ secrets.POLYGON_KEY }}" || { echo "ERROR: POLYGON_KEY secret is missing"; exit 1; }
           python etl_polygon_5m_ci.py \
-            --symbols-file universe_top${{ inputs.top }}.csv \
+            --symbols-file "universe_top${{ inputs.top }}.csv" \
             --start "${{ inputs.start }}" \
             --end   "${{ inputs.end }}" \
             --out-dir data_5m \
             --rth-only \
-            --api-key "${POLYGON_KEY}"
+            --api-key "${{ secrets.POLYGON_KEY }}"
 
       - name: Upload dataset artifact
         uses: actions/upload-artifact@v4
