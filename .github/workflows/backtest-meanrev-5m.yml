@@ -1,28 +1,33 @@
-# .github/workflows/backtest-meanrev-5m.yml
 name: backtest-meanrev-5m
 
 on:
   workflow_dispatch:
     inputs:
       artifact_name:
-        description: "Dataset artifact name (e.g. data-5m-2024-01-01-2024-12-31)"
+        description: Dataset artifact name (e.g. data-5m-2024-01-01-2024-12-31)
         required: true
+      notional:
+        description: Dollars per trade for $PnL
+        required: true
+        default: "5000"
 
 jobs:
   bt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
 
-      # ⬇️ Cross-run download (from build-5m-dataset workflow)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Cross-run artifact download from the dataset builder workflow
       - name: Download dataset artifact
         uses: dawidd6/action-download-artifact@v2
         with:
-          workflow: build-5m-dataset.yml   # the workflow file that produced the artifact
+          workflow: build-5m-dataset.yml
           workflow_conclusion: success
-          branch: main                     # change if your default branch isn't main
+          branch: main
           name: ${{ inputs.artifact_name }}
           path: dataset
 
@@ -31,11 +36,35 @@ jobs:
           python -m pip install --upgrade pip
           pip install pandas pyarrow
 
+      - name: Sanity check dataset
+        run: |
+          test -d dataset/data_5m || { echo "ERROR: dataset/data_5m not found"; ls -R; exit 1; }
+          ls -1 dataset/data_5m | head -n 10
+
       - name: Run backtest
         run: |
           python backtest_meanrev_5m.py \
             --data-dir dataset/data_5m \
-            --out backtests/report_5m.json
+            --out backtests/report_5m.json \
+            --notional "${{ inputs.notional }}"
+
+      - name: Show summary in logs
+        run: |
+          python - <<'PY'
+import json, pathlib
+p = pathlib.Path("backtests/report_5m.json")
+d = json.loads(p.read_text()) if p.exists() else {}
+s = d.get("summary", {})
+def pct(x):
+    try: return f"{round(100*float(x), 2)}%"
+    except: return "n/a"
+print("=== MeanReversion 5m Backtest Summary ===")
+print("Symbols:", s.get("symbols", 0))
+print("Trades:", s.get("trades", 0))
+print("Win rate:", pct(s.get("winrate")))
+print("Avg return:", pct(s.get("avg_ret")))
+print("Sum $PnL:", round(float(s.get("sum_pnl_$") or 0), 2))
+PY
 
       - name: Upload backtest report
         uses: actions/upload-artifact@v4
