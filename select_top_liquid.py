@@ -15,11 +15,13 @@ for p in glob.glob(os.path.join(a.data_dir, "*.csv")):
     sym = os.path.splitext(os.path.basename(p))[0]
     try:
         df = pd.read_csv(p, parse_dates=["Date"])
-        if not {"Close","Volume"}.issubset(df.columns): continue
+        if not {"Close","Volume"}.issubset(df.columns): 
+            continue
         sub = df[(df["Date"] >= a.start) & (df["Date"] <= a.end)].copy()
-        if len(sub) < a.min_days: continue                      # not enough data in 2024
+        if len(sub) < a.min_days: 
+            continue                    # not enough data in window
         if sub["Date"].max() < pd.to_datetime(a.end) - pd.Timedelta(days=10):
-            continue                                            # didn’t trade near end of window
+            continue                    # didn’t trade near the end
         adv = (sub["Close"] * sub["Volume"]).median()
         rows.append((sym, float(adv)))
     except Exception:
