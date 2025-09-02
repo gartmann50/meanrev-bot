@@ -21,7 +21,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Cross-run artifact download from the dataset builder workflow
+      # Download dataset artifact produced by build-5m-dataset
       - name: Download dataset artifact
         uses: dawidd6/action-download-artifact@v2
         with:
@@ -38,7 +38,9 @@ jobs:
 
       - name: Sanity check dataset
         run: |
-          test -d dataset/data_5m || { echo "ERROR: dataset/data_5m not found"; ls -R; exit 1; }
+          if [ ! -d "dataset/data_5m" ]; then
+            echo "ERROR: dataset/data_5m not found"; ls -R; exit 1;
+          fi
           ls -1 dataset/data_5m | head -n 10
 
       - name: Run backtest
@@ -47,24 +49,6 @@ jobs:
             --data-dir dataset/data_5m \
             --out backtests/report_5m.json \
             --notional "${{ inputs.notional }}"
-
-      - name: Show summary in logs
-        run: |
-          python - <<'PY'
-import json, pathlib
-p = pathlib.Path("backtests/report_5m.json")
-d = json.loads(p.read_text()) if p.exists() else {}
-s = d.get("summary", {})
-def pct(x):
-    try: return f"{round(100*float(x), 2)}%"
-    except: return "n/a"
-print("=== MeanReversion 5m Backtest Summary ===")
-print("Symbols:", s.get("symbols", 0))
-print("Trades:", s.get("trades", 0))
-print("Win rate:", pct(s.get("winrate")))
-print("Avg return:", pct(s.get("avg_ret")))
-print("Sum $PnL:", round(float(s.get("sum_pnl_$") or 0), 2))
-PY
 
       - name: Upload backtest report
         uses: actions/upload-artifact@v4
