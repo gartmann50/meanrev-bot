@@ -1,0 +1,44 @@
+name: backtest-meanrev-5m
+
+on:
+  workflow_dispatch:
+    inputs:
+      artifact:
+        description: Dataset artifact name (from build-5m-dataset)
+        required: true
+      notional:
+        description: Notional per trade (for later; not used in PnL here)
+        required: false
+        default: "1"
+
+concurrency: { group: backtest-meanrev-5m, cancel-in-progress: true }
+
+jobs:
+  bt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas pyarrow
+
+      - name: Download dataset artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+          path: dataset
+
+      - name: Run backtest
+        run: |
+          python backtest_meanrev_5m.py \
+            --data-dir dataset/data_5m \
+            --out backtests/report_5m.json
+
+      - name: Upload backtest report
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-5m-report
+          path: backtests/report_5m.json
