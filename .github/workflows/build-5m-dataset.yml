@@ -1,13 +1,24 @@
 name: build-5m-dataset
+
 on:
   workflow_dispatch:
     inputs:
-      top:   { description: "Top N symbols", default: "400", required: true }
-      start: { description: "Start date (YYYY-MM-DD)", default: "2024-01-01", required: true }
-      end:   { description: "End date (YYYY-MM-DD)",   default: "2024-12-31", required: true }
-      rth:   { description: "RTH only (true/false)",    default: "true",        required: true }
-
-concurrency: { group: build-5m-dataset, cancel-in-progress: true }
+      top:
+        description: Top N symbols
+        required: true
+        default: "400"
+      start:
+        description: Start date (YYYY-MM-DD)
+        required: true
+        default: "2024-01-01"
+      end:
+        description: End date (YYYY-MM-DD)
+        required: true
+        default: "2024-12-31"
+      rth:
+        description: RTH only (true/false)
+        required: true
+        default: "true"
 
 jobs:
   build:
@@ -15,30 +26,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+        with:
+          python-version: "3.11"
+
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install pandas requests pyarrow
+
       - name: Verify POLYGON_KEY secret
-        env: { POLYGON_KEY: ${{ secrets.POLYGON_KEY }} }
+        env:
+          POLYGON_KEY: ${{ secrets.POLYGON_KEY }}
         run: |
-          python - <<'PY'
-import os
-k=os.getenv("POLYGON_KEY","")
-print("POLYGON_KEY length:", len(k))
-assert k, "POLYGON_KEY is empty — add it in Settings → Secrets → Actions."
-PY
+          if [ -z "$POLYGON_KEY" ]; then
+            echo "ERROR: POLYGON_KEY is empty. Add it in Settings > Secrets > Actions."
+            exit 1
+          fi
+          echo "POLYGON_KEY length: ${#POLYGON_KEY}"
+
       - name: Build 5m dataset
+        env:
+          POLYGON_KEY: ${{ secrets.POLYGON_KEY }}
         run: |
+          set -e
+          RTH_FLAG=""
+          if [ "${{ inputs.rth }}" = "true" ]; then RTH_FLAG="--rth-only"; fi
           python build_5m_dataset.py \
             --top "${{ inputs.top }}" \
             --start "${{ inputs.start }}" \
-            --end   "${{ inputs.end }}" \
+            --end "${{ inputs.end }}" \
             --out-dir data_5m \
             --universe-out "universe_top${{ inputs.top }}.csv" \
-            $([ "${{ inputs.rth }}" = "true" ] && echo --rth-only) \
-            --api-key "${{ secrets.POLYGON_KEY }}"
+            $RTH_FLAG \
+            --api-key "$POLYGON_KEY"
+
       - name: Upload dataset artifact
         uses: actions/upload-artifact@v4
         with:
