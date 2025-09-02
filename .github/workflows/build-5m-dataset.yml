@@ -1,12 +1,39 @@
+name: build-5m-dataset
+
+on:
+  workflow_dispatch:
+    inputs:
+      top:
+        description: Top N symbols
+        required: true
+        default: "400"
+      start:
+        description: Start date (YYYY-MM-DD)
+        required: true
+        default: "2024-01-01"
+      end:
+        description: End date (YYYY-MM-DD)
+        required: true
+        default: "2024-12-31"
+      rth:
+        description: RTH only (true/false)
+        required: true
+        default: "true"
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    # If you ever store the key in an Environment (e.g., 'shared'), uncomment the next line:
+    # environment: shared
     env:
+      # Accept either secret name, and (temporarily) allow Actions Variables too
       POLYGON_KEY: ${{ secrets.POLYGON_KEY || secrets.POLYGON_API_KEY || vars.POLYGON_KEY || vars.POLYGON_API_KEY }}
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+        with:
+          python-version: "3.11"
 
       - name: Install deps
         run: |
@@ -16,7 +43,7 @@ jobs:
       - name: Verify POLYGON_KEY is available
         run: |
           if [ -z "$POLYGON_KEY" ]; then
-            echo "ERROR: POLYGON_KEY/ POLYGON_API_KEY is empty. Add it in Settings → Secrets."
+            echo "ERROR: POLYGON_KEY / POLYGON_API_KEY is empty. Add it in Settings → Secrets (preferred) or Variables."
             exit 1
           fi
           echo "POLYGON_KEY length: ${#POLYGON_KEY}"
@@ -29,8 +56,17 @@ jobs:
           python build_5m_dataset.py \
             --top "${{ inputs.top }}" \
             --start "${{ inputs.start }}" \
-            --end   "${{ inputs.end }}" \
+            --end "${{ inputs.end }}" \
             --out-dir data_5m \
             --universe-out "universe_top${{ inputs.top }}.csv" \
             $RTH_FLAG \
             --api-key "$POLYGON_KEY"
+
+      - name: Upload dataset artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-5m-${{ inputs.start }}-${{ inputs.end }}
+          path: |
+            universe_top${{ inputs.top }}.csv
+            data_5m/
+          retention-days: 14
