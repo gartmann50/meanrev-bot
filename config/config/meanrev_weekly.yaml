@@ -1,0 +1,11 @@
+topk: 8
+entry:
+  rsi2w_max: 10
+  zscorew_lookback: 4
+  zscorew_min: -1.5
+exits:
+  rsi2w_takeprofit: 60
+  time_stop_weeks: 2
+  close_stop_atr_win: 14
+  close_stop_atr_mult: 1.75
+entry_day_stop_atr_mult: 1.25
