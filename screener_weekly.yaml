@@ -1,0 +1,12 @@
+universe:
+  min_price: 5
+  min_adv20_usd: 2000000
+  exclude_etf: true
+filters:
+  roc50_abs_max: 0.05
+  dist_sma200_abs_max: 0.03
+  rsi14w_min: 45
+  rsi14w_max: 55
+  atrp14_min: 0.01
+  atrp14_max: 0.06
+top_n: 600
