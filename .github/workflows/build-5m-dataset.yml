@@ -2,14 +2,10 @@
 """
 Build a 5-minute dataset from Polygon:
 - Select Top-N liquid US common stocks (median $ volume over ~last 60 trading days)
-- Download adjusted 5m bars for a given date range
+- Download adjusted 5m bars for a date range
 - Optional RTH filter (09:30–16:00 New York)
 - Output: data_5m/*.parquet + data_5m/manifest_5m.json + universe_topN.csv
 """
-
-on:
-  workflow_dispatch:
-
 import os, sys, time, json, argparse, requests, pandas as pd
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
@@ -17,112 +13,105 @@ from zoneinfo import ZoneInfo
 API = "https://api.polygon.io"
 
 def http_get(url, params, api_key):
-    params = dict(params or {}); params["apiKey"] = api_key
-    r = requests.get(url, params=params, timeout=45)
-    if r.status_code == 429:
-        time.sleep(1.2); r = requests.get(url, params=params, timeout=45)
-    r.raise_for_status(); return r.json()
+  params = dict(params or {}); params["apiKey"] = api_key
+  r = requests.get(url, params=params, timeout=45)
+  if r.status_code == 429:
+    time.sleep(1.2); r = requests.get(url, params=params, timeout=45)
+  r.raise_for_status()
+  return r.json()
 
 def fetch_active_common_stocks(api_key):
-    """Active US common stocks (type=CS, USD)."""
-    out=set()
-    url=f"{API}/v3/reference/tickers"
-    params={"market":"stocks","active":"true","type":"CS","currency":"USD","limit":1000}
-    next_url=None
-    while True:
-        data=http_get(next_url or url, params if not next_url else None, api_key)
-        for t in data.get("results", []): out.add(t["ticker"])
-        next_url=data.get("next_url")
-        if not next_url: break
-        next_url = next_url if next_url.startswith("http") else (API + next_url)
-        time.sleep(0.12)
-    return out
+  """Active US common stocks (type=CS, USD)."""
+  out, url = set(), f"{API}/v3/reference/tickers"
+  params = {"market":"stocks","active":"true","type":"CS","currency":"USD","limit":1000}
+  next_url = None
+  while True:
+    data = http_get(next_url or url, params if not next_url else None, api_key)
+    for t in data.get("results", []): out.add(t["ticker"])
+    next_url = data.get("next_url")
+    if not next_url: break
+    next_url = next_url if next_url.startswith("http") else (API + next_url)
+    time.sleep(0.12)
+  return out
 
 def top_liquid_by_grouped_daily(api_key, top=400, min_price=5.0, lookback_trading_days=60):
-    """Rank by median dollar volume using grouped daily over ~last 60 trading days."""
-    tickers=fetch_active_common_stocks(api_key)
-    rows=[]
-    end=date.today(); start=end - timedelta(days=90)  # ~60 trading days
-    d=start
-    while d<=end:
-        ds=d.isoformat()
-        try:
-            data=http_get(f"{API}/v2/aggs/grouped/locale/us/market/stocks/{ds}", {"adjusted":"true"}, api_key)
-        except requests.HTTPError:
-            d+=timedelta(days=1); continue
-        for r in data.get("results", []) or []:
-            sym=r.get("T"); c=r.get("c"); v=r.get("v"); vw=r.get("vw")
-            if sym not in tickers or not (c and v): continue
-            px = vw or c
-            if px < min_price: continue
-            rows.append((sym, ds, float(px)*float(v)))
-        d+=timedelta(days=1)
-
-    if not rows: return pd.DataFrame(columns=["symbol"])
-    df=pd.DataFrame(rows, columns=["symbol","date","dollar_volume"])
-    recent=sorted(df["date"].unique())[-lookback_trading_days:]
-    df=df[df["date"].isin(recent)]
-    uni=(df.groupby("symbol", as_index=False)["dollar_volume"]
+  """Rank by median dollar volume via grouped daily over ~last 60 trading days."""
+  tickers = fetch_active_common_stocks(api_key)
+  rows, end, start = [], date.today(), date.today() - timedelta(days=90)
+  d = start
+  while d <= end:
+    ds = d.isoformat()
+    try:
+      data = http_get(f"{API}/v2/aggs/grouped/locale/us/market/stocks/{ds}", {"adjusted":"true"}, api_key)
+    except requests.HTTPError:
+      d += timedelta(days=1); continue
+    for r in data.get("results", []) or []:
+      sym, c, v, vw = r.get("T"), r.get("c"), r.get("v"), r.get("vw")
+      if sym not in tickers or not (c and v): continue
+      px = vw or c
+      if px < min_price: continue
+      rows.append((sym, ds, float(px)*float(v)))
+    d += timedelta(days=1)
+  if not rows: return pd.DataFrame(columns=["symbol"])
+  df = pd.DataFrame(rows, columns=["symbol","date","dollar_volume"])
+  recent = sorted(df["date"].unique())[-lookback_trading_days:]
+  df = df[df["date"].isin(recent)]
+  uni = (df.groupby("symbol", as_index=False)["dollar_volume"]
            .median()
            .sort_values("dollar_volume", ascending=False)
            .head(top))[["symbol"]]
-    return uni
+  return uni
 
 def to_df_aggs(results):
-    if not results: return pd.DataFrame(columns=["ts","Open","High","Low","Close","Volume"])
-    df=(pd.DataFrame(results)
+  if not results:
+    return pd.DataFrame(columns=["ts","Open","High","Low","Close","Volume"])
+  df = (pd.DataFrame(results)
           .rename(columns={"t":"ts","o":"Open","h":"High","l":"Low","c":"Close","v":"Volume"}))
-    df["ts"]=pd.to_datetime(df["ts"], unit="ms", utc=True)
-    return df[["ts","Open","High","Low","Close","Volume"]]
+  df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
+  return df[["ts","Open","High","Low","Close","Volume"]]
 
 def rth_filter(df):
-    if df.empty: return df
-    ny=ZoneInfo("America/New_York")
-    tt=df["ts"].dt.tz_convert(ny).dt.time
-    import datetime as dt
-    return df[(tt>=dt.time(9,30)) & (tt<=dt.time(16,0))]
+  if df.empty: return df
+  ny = ZoneInfo("America/New_York")
+  tt = df["ts"].dt.tz_convert(ny).dt.time
+  import datetime as dt
+  return df[(tt >= dt.time(9,30)) & (tt <= dt.time(16,0))]
 
 def write_parquet(df, path):
-    import pyarrow as pa, pyarrow.parquet as pq
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    pq.write_table(pa.Table.from_pandas(df), path, compression="snappy")
+  import pyarrow as pa, pyarrow.parquet as pq
+  os.makedirs(os.path.dirname(path), exist_ok=True)
+  pq.write_table(pa.Table.from_pandas(df), path, compression="snappy")
 
 def main():
-    ap=argparse.ArgumentParser(description="Build 5m Polygon dataset")
-    ap.add_argument("--top", type=int, default=400)
-    ap.add_argument("--start", required=True)            # YYYY-MM-DD
-    ap.add_argument("--end", default=date.today().isoformat())
-    ap.add_argument("--out-dir", default="data_5m")
-    ap.add_argument("--universe-out", default="universe.csv")
-    ap.add_argument("--rth-only", action="store_true")
-    ap.add_argument("--api-key", default=os.getenv("POLYGON_KEY"))
-    a=ap.parse_args()
+  ap = argparse.ArgumentParser(description="Build 5m Polygon dataset")
+  ap.add_argument("--top", type=int, default=400)
+  ap.add_argument("--start", required=True)            # YYYY-MM-DD
+  ap.add_argument("--end", default=date.today().isoformat())
+  ap.add_argument("--out-dir", default="data_5m")
+  ap.add_argument("--universe-out", default="universe.csv")
+  ap.add_argument("--rth-only", action="store_true")
+  ap.add_argument("--api-key", default=os.getenv("POLYGON_KEY"))
+  a = ap.parse_args()
 
-    if not a.api_key: sys.exit("Set POLYGON_KEY or pass --api-key")
+  if not a.api_key:
+    sys.exit("Set POLYGON_KEY or pass --api-key")
 
-    print(f"Selecting Top-{a.top} by median $ volume…")
-    uni=top_liquid_by_grouped_daily(a.api_key, top=a.top)
-    if uni.empty: sys.exit("Universe selection returned 0 symbols.")
-    uni.to_csv(a.universe_out, index=False)
-    print(f"Wrote universe → {a.universe_out} ({len(uni)} symbols)")
+  print(f"Selecting Top-{a.top} by median $ volume…")
+  uni = top_liquid_by_grouped_daily(a.api_key, top=a.top)
+  if uni.empty: sys.exit("Universe selection returned 0 symbols.")
+  uni.to_csv(a.universe_out, index=False)
+  print(f"Wrote universe → {a.universe_out} ({len(uni)} symbols)")
 
-    manifest={"created": date.today().isoformat(), "start": a.start, "end": a.end, "symbols": []}
-    for i,sym in enumerate(uni["symbol"].tolist(),1):
-        try:
-            data=http_get(f"{API}/v2/aggs/ticker/{sym}/range/5/minute/{a.start}/{a.end}",
-                          {"adjusted":"true","limit":50000,"sort":"asc"}, a.api_key)
-            df=to_df_aggs(data.get("results", []))
-            if a.rth_only: df=rth_filter(df)
-            write_parquet(df, os.path.join(a.out_dir, f"{sym}.parquet"))
-            manifest["symbols"].append({"symbol": sym, "rows": int(len(df))})
-            if i%25==0: print(f"{i}/{len(uni)} saved…")
-        except requests.HTTPError as e:
-            print(f"[skip] {sym}: {e}")
-        time.sleep(0.08)
-
-    os.makedirs(a.out_dir, exist_ok=True)
-    with open(os.path.join(a.out_dir,"manifest_5m.json"),"w") as f: json.dump(manifest, f, indent=2)
-    have=sum(1 for s in manifest["symbols"] if s["rows"]>0)
-    print(f"Saved {have}/{len(uni)} symbols → {a.out_dir}")
-
-if __name__=="__main__": main()
+  manifest = {"created": date.today().isoformat(), "start": a.start, "end": a.end, "symbols": []}
+  for i, sym in enumerate(uni["symbol"].tolist(), 1):
+    try:
+      data = http_get(f"{API}/v2/aggs/ticker/{sym}/range/5/minute/{a.start}/{a.end}",
+                      {"adjusted":"true","limit":50000,"sort":"asc"}, a.api_key)
+      df = to_df_aggs(data.get("results", []))
+      if a.rth_only: df = rth_filter(df)
+      write_parquet(df, os.path.join(a.out_dir, f"{sym}.parquet"))
+      manifest["symbols"].append({"symbol": sym, "rows": int(len(df))})
+      if i % 25 == 0: print(f"{i}/{len(uni)} saved…")
+    except requests.HTTPError as e:
+      print(f"[skip] {sym}: {e}")
+    time.sleep(0.08)
