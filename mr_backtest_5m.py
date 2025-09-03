@@ -14,20 +14,70 @@ def atr(df,n=14):
     tr=np.maximum.reduce([(df.h-df.l).abs().values,(df.h-df.c.shift()).abs().values,(df.l-df.c.shift()).abs().values])
     return pd.Series(tr,index=df.index).rolling(n).mean()
 
-def fetch_bars_5m(sym, start_iso, end_iso, key, sec, limit=10000):
-    """Pull 5m bars from Alpaca Data v2. Simple single-shot; for longer ranges split by day."""
-    h={"APCA-API-KEY-ID":key,"APCA-API-SECRET-KEY":sec}
-    r=requests.get(f"{alpaca_data_base()}/v2/stocks/{sym}/bars",
-                   params={"timeframe":"5Min","start":start_iso,"end":end_iso,"limit":limit},
-                   headers=h, timeout=30)
-    if r.status_code>=400: 
-        print(f"{sym} bars HTTP {r.status_code}: {r.text[:200]}")
-        return None
-    b=r.json().get("bars",[])
-    if not b: return None
-    df=pd.DataFrame(b)[["t","o","h","l","c","v"]].rename(columns=str.lower)
-    df["t"]=pd.to_datetime(df["t"], utc=True)
-    return df
+def fetch_bars_5m(sym, start_iso, end_iso, source, alp_key, alp_sec, poly_key, limit=10000):
+    """
+    Return 5m bars DataFrame with columns: t (UTC), o,h,l,c,v
+    source: 'alpaca' or 'polygon'
+    """
+    if source == "polygon":
+        if not poly_key:
+            print("No POLYGON_KEY set")
+            return None
+        # Polygon aggregates API: /v2/aggs/ticker/{sym}/range/5/minute/{from}/{to}
+        url = f"https://api.polygon.io/v2/aggs/ticker/{sym}/range/5/minute/{start_iso}/{end_iso}"
+        params = {
+            "adjusted": "true",
+            "sort": "asc",
+            "limit": 50000,
+            "apiKey": poly_key,
+        }
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            if r.status_code >= 400:
+                print(f"{sym} bars HTTP {r.status_code}: {r.text[:200]}")
+                return None
+            js = r.json()
+            results = js.get("results", [])
+            if not results:
+                return None
+            df = pd.DataFrame(results)[["t","o","h","l","c","v"]].rename(columns=str.lower)
+            # Polygon 't' is epoch ms UTC
+            df["t"] = pd.to_datetime(df["t"], unit="ms", utc=True)
+            return df
+        except Exception as e:
+            print(f"{sym} polygon fetch error: {e}")
+            return None
+
+    else:
+        # Alpaca Data API (IEX feed to avoid SIP 403)
+        params = {
+            "timeframe": "5Min",
+            "start": start_iso,
+            "end": end_iso,
+            "limit": limit,
+            "feed": "iex",
+        }
+        headers = {
+            "APCA-API-KEY-ID": alp_key or "",
+            "APCA-API-SECRET-KEY": alp_sec or "",
+            "accept": "application/json",
+            "user-agent": "mr-backtest-5m/1.0",
+        }
+        try:
+            r = requests.get(f"https://data.alpaca.markets/v2/stocks/{sym}/bars",
+                             params=params, headers=headers, timeout=30)
+            if r.status_code >= 400:
+                print(f"{sym} bars HTTP {r.status_code}: {r.text[:200]}")
+                return None
+            bars = (r.json() or {}).get("bars", [])
+            if not bars:
+                return None
+            df = pd.DataFrame(bars)[["t","o","h","l","c","v"]].rename(columns=str.lower)
+            df["t"] = pd.to_datetime(df["t"], utc=True)
+            return df
+        except Exception as e:
+            print(f"{sym} alpaca fetch error: {e}")
+            return None
 
 def ny_session_bounds(week_str):
     """Given a week (Monday date, YYYY-MM-DD), return session start/end (Mon 09:30 to Fri 15:55 NY)."""
