@@ -1,0 +1,70 @@
+name: Simple MeanReversion
+
+on:
+  schedule:
+    # Friday after close (summer/winter Oslo)
+    - cron: "15 20 * * 5"
+    - cron: "15 21 * * 5"
+    # Intraday every 5 minutes (EDT/EST)
+    - cron: "*/5 13-20 * * 1-5"
+    - cron: "*/5 14-21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      run_open:
+        description: "Run intraday now"
+        type: boolean
+        default: false
+      topk:
+        description: "Basket size"
+        type: string
+        default: "10"
+
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy requests
+
+      - name: Unzip dataset if present
+        shell: python
+        run: |
+          import zipfile, os, pathlib
+          z="stock_data_400.zip"
+          if os.path.exists(z):
+            os.makedirs("stock_data_400", exist_ok=True)
+            with zipfile.ZipFile(z) as zz: zz.extractall("stock_data_400")
+            print("Unzipped daily dataset.")
+
+      - name: Build MR basket (weekly)
+        if: ${{ github.event_name == 'schedule' && (github.event.schedule == '15 20 * * 5' || github.event.schedule == '15 21 * * 5') }}
+        run: |
+          python mr_builder.py --data-dir stock_data_400 --topk "${{ inputs.topk != '' && inputs.topk || '10' }}"
+          ls -lh backtests/mr_basket.csv || true
+
+      - name: Run intraday trader (5m)
+        if: ${{ (github.event_name == 'schedule' && (startsWith(github.event.schedule, '*/5 13') || startsWith(github.event.schedule, '*/5 14') )) || (github.event_name=='workflow_dispatch' && inputs.run_open) }}
+        env:
+          ALPACA_KEY:    ${{ secrets.ALPACA_KEY }}
+          ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
+          ALPACA_ENV:    paper
+        run: |
+          if [ ! -s backtests/mr_basket.csv ]; then
+            echo "No basket yet; skip."; exit 0
+          fi
+          python mr_intraday.py --picklist backtests/mr_basket.csv --topk "${{ inputs.topk != '' && inputs.topk || '10' }}"
+
+      - name: Upload logs (optional)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mr-logs
+          path: |
+            backtests/mr_basket.csv
