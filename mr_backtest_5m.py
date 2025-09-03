@@ -90,7 +90,7 @@ def ny_session_bounds(week_str):
     end   = datetime(fri.year,fri.month,fri.day,21,10,tzinfo=timezone.utc)  # ~close buffer
     return start, end
 
-def run_backtest(picklist, week, topk, risk_pct, atr_mult, key, sec):
+def run_backtest(picklist, week, topk, risk_pct, atr_mult, source, key, sec, poly_key):
     start_utc, end_utc = ny_session_bounds(week)
     start_iso = start_utc.isoformat().replace("+00:00","Z")
     end_iso   = end_utc.isoformat().replace("+00:00","Z")
@@ -106,7 +106,7 @@ def run_backtest(picklist, week, topk, risk_pct, atr_mult, key, sec):
 
     results=[]
     for sym in picks:
-        df = fetch_bars_5m(sym, start_iso, end_iso, key, sec)
+        df = fetch_bars_5m(sym, start_iso, end_iso, source, key, sec, poly_key)
         if df is None or len(df)<30:
             results.append((sym,0,0.0,0.0,0,0)); 
             continue
@@ -181,17 +181,46 @@ def run_backtest(picklist, week, topk, risk_pct, atr_mult, key, sec):
     print(f"\nTOTAL pnl: {out.pnl.sum():.2f}  | total trades: {int(out.trades.sum())}")
 
 def main():
-    ap=argparse.ArgumentParser()
-    ap.add_argument("--picklist", default="backtests/mr_basket.csv")
-    ap.add_argument("--week", required=True, help="Monday date YYYY-MM-DD")
-    ap.add_argument("--topk", type=int, default=10)
-    ap.add_argument("--risk-pct", type=float, default=0.005)
-    ap.add_argument("--atr-mult", type=float, default=1.5)
-    a=ap.parse_args()
+    # --- CLI ---
+    ap = argparse.ArgumentParser(description="Mean-reversion backtest on 5m bars")
+    ap.add_argument("--picklist", required=True, help="CSV with at least columns: week_start/symbol")
+    ap.add_argument("--week", required=True, help="Week (YYYY-MM-DD) to backtest")
+    ap.add_argument("--topk", type=int, default=10, help="How many symbols to use")
+    ap.add_argument("--risk-pct", type=float, default=0.005, help="Risk per trade as fraction of equity")
+    ap.add_argument("--atr-mult", type=float, default=1.5, help="ATR multiple for bands/stops")
+    # NEW: choose data source
+    ap.add_argument("--data-source", choices=["alpaca", "polygon"], default="alpaca",
+                    help="Where to fetch 5m bars from")
+    a = ap.parse_args()
 
-    key=os.getenv("ALPACA_KEY",""); sec=os.getenv("ALPACA_SECRET","")
-    if not key or not sec: raise SystemExit("Set ALPACA_KEY and ALPACA_SECRET in your env.")
-    run_backtest(a.picklist, a.week, a.topk, a.risk-pct, a.atr_mult, key, sec)
+    # --- Keys from env ---
+    alpaca_key = os.getenv("ALPACA_KEY", "")
+    alpaca_sec = os.getenv("ALPACA_SECRET", "")
+    polygon_key = os.getenv("POLYGON_KEY", "")
 
-if __name__=="__main__":
+    # --- Validate based on data source ---
+    if a.data_source == "alpaca":
+        if not alpaca_key or not alpaca_sec:
+            print("ERROR: set ALPACA_KEY and ALPACA_SECRET environment variables.", file=sys.stderr)
+            sys.exit(1)
+    else:  # polygon
+        if not polygon_key:
+            print("ERROR: set POLYGON_KEY environment variable.", file=sys.stderr)
+            sys.exit(1)
+
+    # --- Run ---
+    run_backtest(
+        picklist=a.picklist,
+        week=a.week,
+        topk=a.topk,
+        risk_pct=a.risk_pct,
+        atr_mult=a.atr_mult,
+        source=a.data_source,
+        key=alpaca_key,
+        sec=alpaca_sec,
+        poly_key=polygon_key,
+    )
+
+
+if __name__ == "__main__":
     main()
