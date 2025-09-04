@@ -436,7 +436,7 @@ def main():
     with open(os.path.join(args.out_dir, "recap.txt"), "w") as f:
          f.write(f"winrate={summary['winrate']:.2%} | total_pnl_usd={summary['sum_pnl_usd']:,.2f}\n")
 
-        weekly.to_csv(os.path.join(args.out_dir, "weekly_summary.csv"), index=False)
+         weekly.to_csv(os.path.join(args.out_dir, "weekly_summary.csv"), index=False)
    
     if not args.no_json:
         with open(os.path.join(args.out_dir, "summary.json"), "w") as f:
@@ -444,4 +444,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
