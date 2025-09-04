@@ -320,6 +320,8 @@ def main():
     # Back-compat alias (maps to stop-mult if provided)
     ap.add_argument("--atr-mult", type=float, default=None, help="Deprecated: use --stop-mult")
 
+    ap.add_argument("--no-json", action="store_true", help="Don't write summary.json (print only)")
+    
     args = ap.parse_args()
     if args.atr_mult is not None and args.stop_mult == 1.00:
         args.stop_mult = args.atr_mult
@@ -445,10 +447,15 @@ def main():
         f.write("\n".join(lines) + "\n")
 
     # console recap
-    print("SUMMARY:", summary)
-    if not weekly.empty:
-        print("\nWeekly breakdown (first 12 rows):")
-        print(weekly.head(12).to_string(index=False))
+    print("\n=== SUMMARY ===")
+    print(f"symbols={summary.get('symbols',0)}  trades={summary.get('trades',0)}  "
+          f"winrate={summary.get('winrate',0):.2%}  avg_ret={summary.get('avg_ret',0):.4f}  "
+          f"sum_pnl_usd={summary.get('sum_pnl_usd',0):.2f}")
 
-if __name__ == "__main__":
+    if not weekly.empty:
+         print("\nWeekly (all):")
+        print(weekly.to_string(index=False)
+          
+    if __name__ == "__main__":
     main()
+
