@@ -10,18 +10,40 @@ on:
         description: Dollars per trade for $PnL
         required: true
         default: "5000"
+      risk:
+        description: Risk model (atr or pct)
+        required: true
+        default: "atr"
+      stop_mult:
+        description: Stop multiple (ATR or pct, e.g., 1.0 or 0.05)
+        required: true
+        default: "1.0"
+      tp_mult:
+        description: Take-profit multiple (ATR or pct, e.g., 1.5 or 0.07)
+        required: true
+        default: "1.5"
+      max_hold:
+        description: Max holding days
+        required: true
+        default: "3"
+      exit_rsi:
+        description: Exit when RSI2 >= this (set to 0 to disable)
+        required: true
+        default: "70"
+      exit_ema:
+        description: Exit when Close>EMA5 (true/false)
+        required: true
+        default: "true"
 
 jobs:
   bt:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # Download dataset artifact produced by build-5m-dataset
       - name: Download dataset artifact
         uses: dawidd6/action-download-artifact@v2
         with:
@@ -38,9 +60,7 @@ jobs:
 
       - name: Sanity check dataset
         run: |
-          if [ ! -d "dataset/data_5m" ]; then
-            echo "ERROR: dataset/data_5m not found"; ls -R; exit 1;
-          fi
+          test -d dataset/data_5m || { echo "ERROR: dataset/data_5m missing"; ls -R; exit 1; }
           ls -1 dataset/data_5m | head -n 10
 
       - name: Run backtest
@@ -48,7 +68,13 @@ jobs:
           python backtest_meanrev_5m.py \
             --data-dir dataset/data_5m \
             --out backtests/report_5m.json \
-            --notional "${{ inputs.notional }}"
+            --notional "${{ inputs.notional }}" \
+            --risk "${{ inputs.risk }}" \
+            --stop-mult "${{ inputs.stop_mult }}" \
+            --tp-mult "${{ inputs.tp_mult }}" \
+            --max-hold "${{ inputs.max_hold }}" \
+            --exit-rsi "${{ inputs.exit_rsi }}" \
+            $([ "${{ inputs.exit_ema }}" = "true" ] && echo --exit-ema)
 
       - name: Upload backtest report
         uses: actions/upload-artifact@v4
