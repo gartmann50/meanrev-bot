@@ -400,49 +400,60 @@ def main():
     trades_df.to_csv(os.path.join(args.out_dir, "trades.csv"), index=False)
 
     if trades_df.empty:
-        summary = {"symbols":0,"trades":0,"winrate":0.0,"avg_ret":0.0,"sum_ret":0.0,"sum_pnl_usd":0.0}
-        weekly  = pd.DataFrame(columns=["week","trades","winrate","sum_pnl_usd"])
+        summary = {
+            "symbols": 0,
+            "trades": 0,
+            "winrate": 0.0,
+            "avg_ret": 0.0,
+            "sum_ret": 0.0,
+            "sum_pnl_usd": 0.0,
+        }
+        weekly = pd.DataFrame(columns=["week", "trades", "winrate", "sum_pnl_usd"])
     else:
-        dir_val = trades_df["side"].map({"long":1,"short":-1}).astype(float)
-        trades_df["ret"] = (trades_df["exit"]/trades_df["entry"] - 1.0) * dir_val
+        dir_val = trades_df["side"].map({"long": 1, "short": -1}).astype(float)
+        trades_df["ret"] = (trades_df["exit"] / trades_df["entry"] - 1.0) * dir_val
         trades_df["pnl_usd"] = args.notional * trades_df["ret"]
+
         summary = {
             "symbols": int(trades_df["symbol"].nunique()),
-            "trades":  int(len(trades_df)),
-            "winrate": float((trades_df["pnl_usd"]>0).mean()),
+            "trades": int(len(trades_df)),
+            "winrate": float((trades_df["pnl_usd"] > 0).mean()),
             "avg_ret": float(trades_df["ret"].mean()),
             "sum_ret": float(trades_df["ret"].sum()),
             "sum_pnl_usd": float(trades_df["pnl_usd"].sum()),
         }
-        weekly = (trades_df.groupby("week", as_index=False)
-                  .agg(trades=("symbol","count"),
-                       winrate=("ret", lambda s: float((s>0).mean())),
-                       sum_pnl_usd=("pnl_usd","sum"))
-                  .sort_values("week"))
 
+        weekly = (
+            trades_df.groupby("week", as_index=False)
+            .agg(
+                trades=("symbol", "count"),
+                winrate=("ret", lambda s: float((s > 0).mean())),
+                sum_pnl_usd=("pnl_usd", "sum"),
+            )
+            .sort_values("week")
+        )
+
+    # ---- console output ----
     print("\n=== SUMMARY ===")
-    print(f"symbols={summary['symbols']}  trades={summary['trades']}  "
-          f"winrate={summary['winrate']:.2%}  avg_ret={summary['avg_ret']:.4f}  "
-          f"sum_pnl_usd={summary['sum_pnl_usd']:.2f}")
+    print(
+        f"symbols={summary['symbols']}  trades={summary['trades']}  "
+        f"winrate={summary['winrate']:.2%}  avg_ret={summary['avg_ret']:.4f}  "
+        f"sum_pnl_usd={summary['sum_pnl_usd']:.2f}"
+    )
 
-    if not trades_df.empty:
+    if not weekly.empty:
         print("\nWeekly (all):")
         print(weekly.to_string(index=False))
+        # One-line recap right after the weekly table
+        print(
+            f"\nRECAP: winrate={summary['winrate']:.2%} | total_pnl_usd={summary['sum_pnl_usd']:,.2f}"
+        )
 
-         # ---- one-line recap right after the weekly table ----
-         print(f"\nRECAP: winrate={summary['winrate']:.2%} | total_pnl_usd={summary['sum_pnl_usd']:,.2f}")
-
-         # (optional) also write it to a small text file
-    with open(os.path.join(args.out_dir, "recap.txt"), "w") as f:
-         f.write(f"winrate={summary['winrate']:.2%} | total_pnl_usd={summary['sum_pnl_usd']:,.2f}\n")
-
-         weekly.to_csv(os.path.join(args.out_dir, "weekly_summary.csv"), index=False)
-   
+    # ---- files ----
+    weekly.to_csv(os.path.join(args.out_dir, "weekly_summary.csv"), index=False)
     if not args.no_json:
         with open(os.path.join(args.out_dir, "summary.json"), "w") as f:
             json.dump({"summary": summary}, f, indent=2)
 
 if __name__ == "__main__":
     main()
-
-
