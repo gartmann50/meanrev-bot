@@ -426,20 +426,22 @@ def main():
           f"sum_pnl_usd={summary['sum_pnl_usd']:.2f}")
 
     if not trades_df.empty:
-                           print("\nWeekly (all):")
-                           print(weekly.to_string(index=False))
+        print("\nWeekly (all):")
+        print(weekly.to_string(index=False))
 
-                          # ---- one-line recap right after the weekly table ----
-                          print(f"\nRECAP: winrate={summary['winrate']:.2%} | total_pnl_usd={summary['sum_pnl_usd']:,.2f}")
+         # ---- one-line recap right after the weekly table ----
+         print(f"\nRECAP: winrate={summary['winrate']:.2%} | total_pnl_usd={summary['sum_pnl_usd']:,.2f}")
 
-                          # (optional) also write it to a small text file
-                          with open(os.path.join(args.out_dir, "recap.txt"), "w") as f:
-                          f.write(f"winrate={summary['winrate']:.2%} | total_pnl_usd={summary['sum_pnl_usd']:,.2f}\n")
+         # (optional) also write it to a small text file
+    with open(os.path.join(args.out_dir, "recap.txt"), "w") as f:
+         f.write(f"winrate={summary['winrate']:.2%} | total_pnl_usd={summary['sum_pnl_usd']:,.2f}\n")
 
-    weekly.to_csv(os.path.join(args.out_dir, "weekly_summary.csv"), index=False)
+        weekly.to_csv(os.path.join(args.out_dir, "weekly_summary.csv"), index=False)
+   
     if not args.no_json:
         with open(os.path.join(args.out_dir, "summary.json"), "w") as f:
             json.dump({"summary": summary}, f, indent=2)
 
 if __name__ == "__main__":
     main()
+
